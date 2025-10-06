@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+.App {
+  text-align: center;
+}
+
+.upload-container {
+  padding: 2rem 1rem;
+}
+
+.home-page {
+  padding: 2rem 1rem;
+}
+
+/* Custom scrollbar for 3D viewer */
+.viewer-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.viewer-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.viewer-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.viewer-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Loading animation */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .home-page {
+    padding: 1rem 0.5rem;
+  }
+
+  .upload-container {
+    padding: 1rem 0.5rem;
+  }
+}

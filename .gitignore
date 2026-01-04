@@ -1,3 +1,5 @@
 # Ignore folders inside backend
 backend/outputs/
 backend/uploads/
+
+imp.txt

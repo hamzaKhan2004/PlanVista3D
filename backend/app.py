@@ -174,7 +174,7 @@ def process_blueprint_async(task_id, input_path, output_path):
         processing_status[task_id]["progress"] = 50
 
         # Find Blender
-        blender_path = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+        blender_path = r"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe"
         if not os.path.exists(blender_path):
             blender_path = "blender"
 

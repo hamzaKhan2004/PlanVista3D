@@ -14,7 +14,7 @@ const Model = ({ url }) => {
     useFrame((state) => {
       if (modelRef.current) {
         // Optional: Add subtle rotation
-        // modelRef.current.rotation.y += 0.005;
+        modelRef.current.rotation.y += 0.005;
       }
     });
 

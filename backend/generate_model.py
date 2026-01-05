@@ -1,226 +1,205 @@
+import sys, os
+# Add user site-packages where ezdxf is installed
+sys.path.append(r"C:\Users\Hamza Khan\AppData\Roaming\Python\Python311\site-packages")
+
 import bpy
 import sys
 import os
 import json
+import bmesh
+import ezdxf
+from mathutils import Vector
+
 
 # -------------------------------------------------
 # SCENE CLEANUP
 # -------------------------------------------------
-
 def clear_scene():
-    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     for mesh in bpy.data.meshes:
         if mesh.users == 0:
             bpy.data.meshes.remove(mesh)
 
+
 # -------------------------------------------------
-# MATERIALS
+# CORE DXF → BUILDING
 # -------------------------------------------------
+def generate_building_from_dxf(config):
+    dxf_path = config["dxf_path"]
+    target_size = float(config.get("target_size", 30.0))
+    wall_height = float(config.get("wall_height", 3.2))
+    wall_thickness = float(config.get("wall_thickness", 0.25))
+    floors = int(config.get("floors", 3))
+    floor_height = float(config.get("floor_height", 3.5))
+    slab_thickness = float(config.get("slab_thickness", 0.3))
 
-def wall_material():
-    mat = bpy.data.materials.new("WallMaterial")
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
+    if not os.path.exists(dxf_path):
+        raise RuntimeError(f"DXF file not found: {dxf_path}")
 
-    noise = nodes.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = 35
+    print(f"📄 Loading DXF: {dxf_path}")
+    doc = ezdxf.readfile(dxf_path)
+    msp = doc.modelspace()
 
-    bump = nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.2
+    bm = bmesh.new()
 
-    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
-    bsdf.inputs["Base Color"].default_value = (0.88, 0.88, 0.88, 1)
-    bsdf.inputs["Roughness"].default_value = 0.75
-    bsdf.inputs["Specular IOR Level"].default_value = 0.2
+    minx = miny = 1e9
+    maxx = maxy = -1e9
+    line_count = 0
 
-    out = nodes.new("ShaderNodeOutputMaterial")
+    # Build wall faces from LINE entities
+    for e in msp:
+        if e.dxftype() != "LINE":
+            continue
 
-    links.new(noise.outputs["Fac"], bump.inputs["Height"])
-    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
-    links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+        p1 = Vector((e.dxf.start.x, e.dxf.start.y, 0))
+        p2 = Vector((e.dxf.end.x, e.dxf.end.y, 0))
 
-    return mat
+        d = p2 - p1
+        if d.length < 1e-6:
+            continue
 
+        line_count += 1
 
-def floor_material():
-    mat = bpy.data.materials.new("FloorMaterial")
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
+        minx = min(minx, p1.x, p2.x)
+        miny = min(miny, p1.y, p2.y)
+        maxx = max(maxx, p1.x, p2.x)
+        maxy = max(maxy, p1.y, p2.y)
 
-    tex_coord = nodes.new("ShaderNodeTexCoord")
-    mapping = nodes.new("ShaderNodeMapping")
-    mapping.inputs["Scale"].default_value = (6, 6, 1)
+        d.normalize()
+        n = Vector((-d.y, d.x, 0)) * (wall_thickness / 2.0)
 
-    tex = nodes.new("ShaderNodeTexImage")
-    tex.image = bpy.data.images.load(
-        os.path.join(os.path.dirname(__file__), "textures", "wood_floor2.jpg")
+        try:
+            v1 = bm.verts.new(p1 + n)
+            v2 = bm.verts.new(p2 + n)
+            v3 = bm.verts.new(p2 - n)
+            v4 = bm.verts.new(p1 - n)
+            bm.faces.new((v1, v2, v3, v4))
+        except:
+            # Ignore degenerate faces
+            pass
+
+    if line_count == 0 or not bm.faces:
+        bm.free()
+        raise RuntimeError("No usable LINE entities for walls in DXF")
+
+    # Center the geometry around origin
+    center = Vector(((minx + maxx) / 2.0, (miny + maxy) / 2.0, 0))
+    for v in bm.verts:
+        v.co -= center
+
+    mesh = bpy.data.meshes.new("Walls")
+    bm.to_mesh(mesh)
+    bm.free()
+
+    wall_obj = bpy.data.objects.new("Walls", mesh)
+    bpy.context.collection.objects.link(wall_obj)
+
+    # Auto-scale to target_size
+    plan_size = max(maxx - minx, maxy - miny)
+    if plan_size <= 0:
+        raise RuntimeError("Invalid plan size from DXF")
+
+    scale = target_size / plan_size
+    wall_obj.scale = (scale, scale, scale)
+    bpy.context.view_layer.objects.active = wall_obj
+    wall_obj.select_set(True)
+    bpy.ops.object.transform_apply(scale=True)
+
+    # Extrude wall height
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.extrude_region_move(
+        TRANSFORM_OT_translate={"value": (0, 0, wall_height)}
     )
+    bpy.ops.object.mode_set(mode="OBJECT")
 
-    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
-    bsdf.inputs["Roughness"].default_value = 0.45
+    # Floor slab (tight fit)
+    bbox = [wall_obj.matrix_world @ Vector(c) for c in wall_obj.bound_box]
+    minx = min(v.x for v in bbox)
+    maxx = max(v.x for v in bbox)
+    miny = min(v.y for v in bbox)
+    maxy = max(v.y for v in bbox)
 
-    out = nodes.new("ShaderNodeOutputMaterial")
+    sx = maxx - minx
+    sy = maxy - miny
 
-    links.new(tex_coord.outputs["UV"], mapping.inputs["Vector"])
-    links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
-    links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-    links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    bpy.ops.mesh.primitive_cube_add(location=(0, 0, -slab_thickness / 2.0))
+    slab = bpy.context.object
+    slab.name = "FloorSlab"
+    slab.scale = (sx / 2.0, sy / 2.0, slab_thickness / 2.0)
 
-    return mat
+    # Multi-floor duplication
+    floors_objs = []
+    for i in range(floors):
+        w = wall_obj.copy()
+        w.data = wall_obj.data.copy()
+        w.location.z = i * floor_height
+        bpy.context.collection.objects.link(w)
+        floors_objs.append(w)
 
+        s = slab.copy()
+        s.data = slab.data.copy()
+        s.location.z = i * floor_height
+        bpy.context.collection.objects.link(s)
 
-def door_material():
-    mat = bpy.data.materials.new("DoorMaterial")
+    bpy.data.objects.remove(wall_obj)
+    bpy.data.objects.remove(slab)
+
+    # Material for walls
+    mat = bpy.data.materials.new("WallDark")
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    bsdf.inputs["Base Color"].default_value = (0.55, 0.32, 0.15, 1)
-    bsdf.inputs["Roughness"].default_value = 0.5
-    return mat
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.1, 0.1, 0.1, 1)
+    bsdf.inputs["Roughness"].default_value = 0.7
 
+    for o in floors_objs:
+        o.data.materials.append(mat)
 
-def window_material():
-    mat = bpy.data.materials.new("WindowMaterial")
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    bsdf.inputs["Base Color"].default_value = (0.7, 0.85, 1.0, 0.3)
-    bsdf.inputs["Transmission"].default_value = 1.0
-    bsdf.inputs["Roughness"].default_value = 0.05
-    return mat
+    # Light & camera
+    bpy.ops.object.light_add(type="SUN", location=(30, -30, 50))
+    bpy.context.object.data.energy = 4
 
-# -------------------------------------------------
-# GEOMETRY
-# -------------------------------------------------
+    bpy.ops.object.camera_add(
+        location=(25, -25, 25),
+        rotation=(1.1, 0, 0.9),
+    )
+    bpy.context.scene.camera = bpy.context.object
 
-def create_wall(vertices, img_w, img_h, scale, thickness, height, name):
-    curve = bpy.data.curves.new(name, 'CURVE')
-    curve.dimensions = '3D'
-    poly = curve.splines.new('POLY')
-    poly.points.add(len(vertices) - 1)
-
-    for i, (nx, ny) in enumerate(vertices):
-        x = (nx - 0.5) * img_w * scale
-        y = (0.5 - ny) * img_h * scale
-        poly.points[i].co = (x, y, 0, 1)
-
-    poly.use_cyclic_u = True
-    curve.bevel_depth = thickness * img_w * scale
-    curve.extrude = height
-
-    obj = bpy.data.objects.new(name, curve)
-    bpy.context.collection.objects.link(obj)
-    obj.data.materials.append(wall_material())
-    return obj
-
-
-def convert_to_mesh(obj):
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    bpy.ops.object.convert(target='MESH')
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.uv.smart_project()
-    bpy.ops.object.mode_set(mode='OBJECT')
-    obj.select_set(False)
-
-
-def create_box(center, w, h, img_w, img_h, scale, depth, name, mat):
-    cx = (center[0] - 0.5) * img_w * scale
-    cy = (0.5 - center[1]) * img_h * scale
-    cz = depth / 2
-
-    bpy.ops.mesh.primitive_cube_add(location=(cx, cy, cz))
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.scale = (w * img_w * scale / 2, h * img_h * scale / 2, depth / 2)
-    obj.data.materials.append(mat)
-    return obj
-
-
-def create_floor(rooms, img_w, img_h, scale):
-    minx = min(r["bounds"]["x"] for r in rooms)
-    miny = min(r["bounds"]["y"] for r in rooms)
-    maxx = max(r["bounds"]["x"] + r["bounds"]["width"] for r in rooms)
-    maxy = max(r["bounds"]["y"] + r["bounds"]["height"] for r in rooms)
-
-    verts = [
-        ((minx - 0.5) * img_w * scale, (0.5 - maxy) * img_h * scale, 0),
-        ((maxx - 0.5) * img_w * scale, (0.5 - maxy) * img_h * scale, 0),
-        ((maxx - 0.5) * img_w * scale, (0.5 - miny) * img_h * scale, 0),
-        ((minx - 0.5) * img_w * scale, (0.5 - miny) * img_h * scale, 0),
-    ]
-
-    mesh = bpy.data.meshes.new("FloorMesh")
-    mesh.from_pydata(verts, [], [(0, 1, 2, 3)])
-    obj = bpy.data.objects.new("Floor", mesh)
-    bpy.context.collection.objects.link(obj)
-
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.uv.unwrap()
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    obj.data.materials.append(floor_material())
-    return obj
-
-# -------------------------------------------------
-# LIGHT + CAMERA
-# -------------------------------------------------
-
-def add_lighting(scale):
-    bpy.ops.object.light_add(type='SUN', location=(scale, -scale, scale * 3))
-    bpy.context.active_object.data.energy = 4.5
-
-    bpy.ops.object.light_add(type='AREA', location=(0, 0, scale * 2))
-    area = bpy.context.active_object
-    area.data.energy = 700
-    area.data.size = scale * 2
-
-
-def add_camera(scale):
-    bpy.ops.object.camera_add(location=(scale, -scale, scale))
-    cam = bpy.context.active_object
-    cam.rotation_euler = (1.15, 0, 0.9)
-    bpy.context.scene.camera = cam
 
 # -------------------------------------------------
 # MAIN
 # -------------------------------------------------
-
 def main():
+    # Blender passes its own args; we read after "--"
     argv = sys.argv
-    argv = argv[argv.index("--") + 1:]
-    analysis_file, output_path = argv
+    if "--" not in argv:
+        raise RuntimeError("Missing '--' and config arguments")
 
-    with open(analysis_file) as f:
-        data = json.load(f)
+    argv = argv[argv.index("--") + 1 :]
+    if len(argv) < 2:
+        raise RuntimeError("Usage: blender ... --python generate_model.py -- <config.json> <output.glb>")
+
+    config_path, output_path = argv[0], argv[1]
+
+    if not os.path.exists(config_path):
+        raise RuntimeError(f"Config JSON not found: {config_path}")
+
+    with open(config_path, "r") as f:
+        config = json.load(f)
 
     clear_scene()
+    generate_building_from_dxf(config)
 
-    img_w = data["image_width"]
-    img_h = data["image_height"]
-    scale = data["scale_factor"]
-    wall_h = data["wall_height"]
+    # Export GLB
+    print(f"📦 Exporting GLB to: {output_path}")
+    bpy.ops.export_scene.gltf(
+        filepath=output_path,
+        export_format="GLB",
+        export_apply=True,
+    )
+    print("✅ Export done")
 
-    for w in data["walls"]:
-        obj = create_wall(w["vertices"], img_w, img_h, scale, w["thickness"], wall_h, w["id"])
-        convert_to_mesh(obj)
-
-    for d in data["doors"]:
-        create_box(d["center"], d["width"], d["height"], img_w, img_h, scale, 0.15, d["id"], door_material())
-
-    for w in data["windows"]:
-        create_box(w["center"], w["width"], w["height"], img_w, img_h, scale, 0.07, w["id"], window_material())
-
-    create_floor(data["rooms"], img_w, img_h, scale)
-
-    add_lighting(max(img_w, img_h) * scale * 0.3)
-    add_camera(max(img_w, img_h) * scale * 0.35)
-
-    bpy.ops.export_scene.gltf(filepath=output_path, export_format='GLB', export_apply=True)
 
 if __name__ == "__main__":
     main()

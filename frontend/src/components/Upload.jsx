@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
@@ -17,6 +17,13 @@ const Upload = () => {
   const handleUpload = async () => {
     if (!file) {
       setError("Please select a file");
+      return;
+    }
+
+    const ext = file.name.split(".").pop().toLowerCase();
+    const allowed = ["dxf", "png", "jpg", "jpeg"];
+    if (!allowed.includes(ext)) {
+      setError("Supported formats: DXF, PNG, JPG, JPEG.");
       return;
     }
 
@@ -53,18 +60,18 @@ const Upload = () => {
 
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Blueprint Image
+            Select Blueprint (DXF / Image)
           </label>
           <input
             type="file"
-            accept=".png,.jpg,.jpeg,.pdf"
+            accept=".dxf,.png,.jpg,.jpeg"
             onChange={handleFileChange}
             className="block w-full text-sm text-gray-500
-                     file:mr-4 file:py-2 file:px-4
-                     file:rounded-full file:border-0
-                     file:text-sm file:font-semibold
-                     file:bg-indigo-50 file:text-indigo-700
-                     hover:file:bg-indigo-100"
+                   file:mr-4 file:py-2 file:px-4
+                   file:rounded-full file:border-0
+                   file:text-sm file:font-semibold
+                   file:bg-indigo-50 file:text-indigo-700
+                   hover:file:bg-indigo-100"
           />
         </div>
 
@@ -94,7 +101,7 @@ const Upload = () => {
         </button>
 
         <div className="mt-4 text-xs text-gray-500">
-          <p>Supported formats: PNG, JPG, JPEG, PDF</p>
+          <p>Supported formats: DXF, PNG, JPG, JPEG</p>
           <p>Max file size: 16MB</p>
         </div>
       </div>

@@ -3,3 +3,4 @@ backend/outputs/
 backend/uploads/
 
 imp.txt
+.env

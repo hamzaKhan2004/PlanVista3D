@@ -36,6 +36,9 @@ const ViewerPage = () => {
   const [editingMode, setEditingMode] = useState(false);
   const [selectedObject, setSelectedObject] = useState(null);
   const [modelData, setModelData] = useState(null);
+  const [isFullscreenEdit, setIsFullscreenEdit] = useState(false);
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(false);
   const editorRef = useRef(null);
 
   // Editor state with visibility controls
@@ -93,7 +96,7 @@ const ViewerPage = () => {
                 visible: true,
                 color: "#cccccc",
                 isOriginal: true,
-              })
+              }),
             );
 
             const doors = Array.from(
@@ -104,7 +107,7 @@ const ViewerPage = () => {
                 visible: true,
                 color: "#8B4513",
                 isOriginal: true,
-              })
+              }),
             );
 
             const windows = Array.from(
@@ -115,7 +118,7 @@ const ViewerPage = () => {
                 visible: true,
                 color: "#87CEEB",
                 isOriginal: true,
-              })
+              }),
             );
 
             const rooms = Array.from(
@@ -126,7 +129,7 @@ const ViewerPage = () => {
                 visible: true,
                 color: "#8B4513",
                 isOriginal: true,
-              })
+              }),
             );
 
             setDynamicObjects({
@@ -215,7 +218,7 @@ const ViewerPage = () => {
     setDynamicObjects((prev) => ({
       ...prev,
       [objectType]: prev[objectType].filter(
-        (obj) => obj.id !== selectedObject.id
+        (obj) => obj.id !== selectedObject.id,
       ),
     }));
 
@@ -235,7 +238,7 @@ const ViewerPage = () => {
     setDynamicObjects((prev) => ({
       ...prev,
       [objectTypeKey]: prev[objectTypeKey].map((obj) =>
-        obj.id === objectId ? { ...obj, visible: !obj.visible } : obj
+        obj.id === objectId ? { ...obj, visible: !obj.visible } : obj,
       ),
     }));
 
@@ -268,7 +271,7 @@ const ViewerPage = () => {
     setDynamicObjects((prev) => ({
       ...prev,
       [objectType]: prev[objectType].map((obj) =>
-        obj.id === selectedObject.id ? { ...obj, color } : obj
+        obj.id === selectedObject.id ? { ...obj, color } : obj,
       ),
     }));
 
@@ -337,6 +340,19 @@ const ViewerPage = () => {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && editingMode) {
+        setEditingMode(false);
+        setIsFullscreenEdit(false);
+        setSelectedObject(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [editingMode]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
@@ -386,7 +402,12 @@ const ViewerPage = () => {
 
               <div className="flex items-center space-x-4">
                 <button
-                  onClick={() => setEditingMode(!editingMode)}
+                  // onClick={() => setEditingMode(!editingMode)}
+                  onClick={() => {
+                    const newMode = !editingMode;
+                    setEditingMode(newMode);
+                    setIsFullscreenEdit(newMode);
+                  }}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                     editingMode
                       ? "bg-blue-600 text-white shadow-lg"
@@ -394,7 +415,21 @@ const ViewerPage = () => {
                   }`}
                 >
                   <WrenchScrewdriverIcon className="w-5 h-5" />
-                  <span>{editingMode ? "Exit Edit" : "Edit Mode"}</span>
+                  <span>
+                    {/* {editingMode ? "Exit Edit" : "Edit Mode"} */}
+                    {editingMode && (
+                      <button
+                        onClick={() => {
+                          setEditingMode(false);
+                          setIsFullscreenEdit(false);
+                          setSelectedObject(null);
+                        }}
+                        className="absolute top-4 right-4 z-50 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-white"
+                      >
+                        Exit Edit (ESC)
+                      </button>
+                    )}
+                  </span>
                 </button>
 
                 {/* Add Wall Button */}
@@ -461,10 +496,17 @@ const ViewerPage = () => {
         </div>
 
         {/* Main Content */}
-        <div className="flex h-[calc(100vh-73px)]">
+        {/* <div className="flex h-[calc(100vh-73px)]"> */}
+        <div
+          className={`flex transition-all duration-300 ${
+            isFullscreenEdit
+              ? "fixed inset-0 z-50 bg-gray-900"
+              : "h-[calc(100vh-73px)]"
+          }`}
+        >
           {/* Enhanced Left Panel - Object Properties */}
           {editingMode && (
-            <div className="w-80 bg-gray-800 border-r border-gray-700 overflow-y-auto">
+            <div className="w-96 bg-gray-800 border-r border-gray-700 overflow-y-auto">
               <div className="p-6">
                 <h3 className="text-lg font-semibold mb-4 flex items-center">
                   <Cog6ToothIcon className="w-5 h-5 mr-2 text-blue-400" />
@@ -484,14 +526,14 @@ const ViewerPage = () => {
                             onClick={() =>
                               toggleObjectVisibility(
                                 selectedObject.id,
-                                selectedObject.type
+                                selectedObject.type,
                               )
                             }
                             className="p-1 hover:bg-blue-700/50 rounded"
                             title="Toggle Visibility"
                           >
                             {dynamicObjects[selectedObject.type + "s"]?.find(
-                              (obj) => obj.id === selectedObject.id
+                              (obj) => obj.id === selectedObject.id,
                             )?.visible ? (
                               <EyeIcon className="w-4 h-4 text-blue-400" />
                             ) : (
@@ -518,7 +560,7 @@ const ViewerPage = () => {
                         <p className="text-sm text-blue-300">
                           Status:{" "}
                           {dynamicObjects[selectedObject.type + "s"]?.find(
-                            (obj) => obj.id === selectedObject.id
+                            (obj) => obj.id === selectedObject.id,
                           )?.visible
                             ? "✅ Visible"
                             : "❌ Hidden"}
@@ -687,6 +729,40 @@ const ViewerPage = () => {
 
           {/* 3D Viewport */}
           <div className="flex-1 relative">
+            {editingMode && (
+              <div className="absolute top-1/2 left-4 -translate-y-1/2 bg-gray-800/95 backdrop-blur rounded-xl shadow-xl border border-gray-700 z-50">
+                <div className="flex flex-col p-2 space-y-2">
+                  <button title="Select" className="tool-btn">
+                    🖱️
+                  </button>
+                  <button title="Move" className="tool-btn">
+                    ↔️
+                  </button>
+                  <button title="Rotate" className="tool-btn">
+                    ⟳
+                  </button>
+                  <button title="Scale" className="tool-btn">
+                    ⬚
+                  </button>
+                  <button
+                    title="Add Wall"
+                    onClick={addWall}
+                    className="tool-btn"
+                  >
+                    🧱
+                  </button>
+                  <button
+                    title="Delete"
+                    onClick={removeSelectedObject}
+                    className="tool-btn"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Model Part  */}
             <Advanced3DEditor
               ref={editorRef}
               modelUrl={modelUrl}

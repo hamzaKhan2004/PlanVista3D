@@ -30,6 +30,7 @@ const EditableModel = ({
   const modelRef = useRef();
   const [hoveredObject, setHoveredObject] = useState(null);
   const [dynamicMeshes, setDynamicMeshes] = useState(new Map());
+  
 
   // Handle adding new objects to the scene
   useEffect(() => {

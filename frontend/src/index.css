@@ -44,6 +44,19 @@
   animation: spin 1s linear infinite;
 }
 
+.tool-btn {
+  width: 44px;
+  height: 44px;
+  background: #1f2937;
+  color: #e5e7eb;
+  border-radius: 8px;
+  font-size: 18px;
+}
+.tool-btn:hover {
+  background: #2563eb;
+  color: white;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .home-page {
